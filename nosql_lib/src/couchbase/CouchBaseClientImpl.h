@@ -1,6 +1,6 @@
 /**
  *
- *  @file CouchBaseClient.h
+ *  @file CouchBaseClientImpl.h
  *  An Tao
  *
  *  Copyright 2018, An Tao.  All rights reserved.
@@ -11,22 +11,17 @@
  *  Drogon
  *
  */
-
 #pragma once
-#include <drogon/nosql/CouchBaseResult.h>
-#include <functional>
-#include <memory>
+#include <drogon/nosql/CouchBaseClient.h>
+
 namespace drogon
 {
 namespace nosql
 {
-using NosqlCallback = std::function<void(const CouchBaseResult &)>;
-class CouchBaseClient
+class CouchBaseClientImpl : public CouchBaseClient
 {
-  public:
-    static std::shared_ptr<CouchBaseClient> newClient(
-        const std::string &connStr,
-        size_t connNum);
+    private:
+    
 };
 }  // namespace nosql
 }  // namespace drogon
