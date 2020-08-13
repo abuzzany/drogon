@@ -14,19 +14,22 @@
 
 #pragma once
 
+#include <memory>
 namespace drogon
 {
 namespace nosql
 {
-enum class CouchBaseDataType
-{
-    kDocument = 0,
-    kBinary
-};
+class CouchBaseResultImpl;
+using CouchBaseResultImplPtr = std::shared_ptr<CouchBaseResultImpl>;
 class CouchBaseResult
 {
   public:
-    CouchBaseDataType type();
+    CouchBaseResult(CouchBaseResultImplPtr &&resultPtr)
+        : resultPtr_(std::move(resultPtr))
+    {
+    }
+  private:
+    CouchBaseResultImplPtr resultPtr_;
 };
 }  // namespace nosql
 }  // namespace drogon

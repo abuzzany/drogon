@@ -13,6 +13,8 @@
  */
 #pragma once
 #include <libcouchbase/couchbase.h>
+#include <drogon/nosql/CouchBaseResult.h>
+#include <drogon/utils/string_view.h>
 #include <trantor/net/EventLoop.h>
 #include <memory>
 #include <unordered_map>
@@ -26,14 +28,36 @@ namespace drogon
 namespace nosql
 {
 class CouchBaseConnection
+    : public std::enable_shared_from_this<CouchBaseConnection>,
+      public trantor::NonCopyable
 {
   public:
-    CouchBaseConnection(const std::string &connStr, trantor::EventLoop *loop);
+    CouchBaseConnection(const drogon::string_view &connStr,
+                        const drogon::string_view &username,
+                        const drogon::string_view &password,
+                        trantor::EventLoop *loop);
+    ~CouchBaseConnection();
 
   private:
+    using ConnectionPtr = std::shared_ptr<CouchBaseConnection>;
+    using ConnectionCallback = std::function<void(const ConnectionPtr &)>;
+    using GetCallback=std::function<void(const CouchBaseResult &)>;
     trantor::EventLoop *loop_;
     std::unique_ptr<lcb_io_opt_st> ioop_;
     std::unique_ptr<trantor::Channel> channelPtr_;
+    using EventHandler = void (*)(lcb_socket_t sock,
+                                  short which,
+                                  void *cb_data);
+    std::unordered_map<int, EventHandler> handlerMap_;
+    std::unordered_map<trantor::TimerId, EventHandler> timerMap_;
+    lcb_INSTANCE *instance_ = nullptr;
+    ConnectionCallback closeCallback_{[](const ConnectionPtr &) {}};
+    ConnectionCallback okCallback_{[](const ConnectionPtr &) {}};
+    GetCallback getCallback_{[](const CouchBaseResult &){}};
+    drogon::string_view connString_;
+    drogon::string_view userName_;
+    drogon::string_view password_;
+    void connect();
     static void lcbDestroyIoOpts(struct lcb_io_opt_st *iops);
     static void procs2TrantorCallback(int version,
                                       lcb_loop_procs *loop_procs,
@@ -66,11 +90,10 @@ class CouchBaseConnection
                                               short which,
                                               void *cb_data));
     static void lcbDestroyTimer(struct lcb_io_opt_st *iops, void *event);
-    using EventHandler = void (*)(lcb_socket_t sock,
-                                  short which,
-                                  void *cb_data);
-    std::unordered_map<int, EventHandler> handlerMap_;
-    std::unordered_map<trantor::TimerId, EventHandler> timerMap_;
+    static void bootstrapCallback(lcb_INSTANCE *instance, lcb_STATUS err);
+    static void getCallback(lcb_INSTANCE *instance,
+                            int cbtype,
+                            const lcb_RESPGET *rg);
 };
 using CouchBaseConnectionPtr = std::shared_ptr<CouchBaseConnection>;
 }  // namespace nosql

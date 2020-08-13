@@ -206,9 +206,18 @@ void CouchBaseConnection::procs2TrantorCallback(
     wire_lcb_bsd_impl2(bsd_procs, version);
 }
 
-CouchBaseConnection::CouchBaseConnection(const std::string &connStr,
+CouchBaseConnection::CouchBaseConnection(const drogon::string_view &connStr,
+                                         const drogon::string_view &username,
+                                         const drogon::string_view &password,
                                          trantor::EventLoop *loop)
-    : loop_(loop)
+    : loop_(loop),
+      connString_(connStr),
+      userName_(username),
+      password_(password)
+{
+    loop->queueInLoop([this]() { connect(); });
+}
+void CouchBaseConnection::connect()
 {
     ioop_ = std::make_unique<lcb_io_opt_st>();
     /* setup io iops! */
@@ -221,8 +230,89 @@ CouchBaseConnection::CouchBaseConnection(const std::string &connStr,
      * `need_cleanup' flag might be set in lcb_create() */
     ioop_->v.v3.need_cleanup = 0;
 
-    assert(loop);
+    assert(loop_);
     ioop_->v.v3.cookie = this;
 
     wire_lcb_bsd_impl(ioop_.get());
+
+    lcb_STATUS error;
+    lcb_CREATEOPTS *options = NULL;
+
+    lcb_createopts_create(&options, LCB_TYPE_BUCKET);
+    if (!connString_.empty())
+    {
+        lcb_createopts_connstr(options, connString_.data(), connString_.size());
+    }
+    if (!userName_.empty())
+    {
+        lcb_createopts_credentials(options,
+                                   userName_.data(),
+                                   userName_.size(),
+                                   password_.data(),
+                                   password_.size());
+    }
+    lcb_createopts_io(options, ioop_.get());
+    error = lcb_create(&instance_, options);
+    lcb_createopts_destroy(options);
+    if (error != LCB_SUCCESS)
+    {
+        LOG_ERROR << "Failed to create a libcouchbase instance: "
+                  << lcb_strerror_short(error);
+        closeCallback_(shared_from_this());
+        return;
+    }
+
+    /* Set up the callbacks */
+    lcb_set_bootstrap_callback(instance_,
+                               CouchBaseConnection::bootstrapCallback);
+    lcb_install_callback(instance_,
+                         LCB_CALLBACK_GET,
+                         (lcb_RESPCALLBACK)get_callback);
+    lcb_install_callback(instance_,
+                         LCB_CALLBACK_STORE,
+                         (lcb_RESPCALLBACK)store_callback);
+
+    if ((error = lcb_connect(instance_)) != LCB_SUCCESS)
+    {
+        LOG_ERROR << "Failed to connect libcouchbase instance: "
+                  << lcb_strerror_short(error);
+        lcb_destroy(instance_);
+        closeCallback_(shared_from_this());
+    }
+}
+CouchBaseConnection::~CouchBaseConnection()
+{
+    lcb_destroy(instance_);
+}
+
+void CouchBaseConnection::bootstrapCallback(lcb_INSTANCE *instance,
+                                            lcb_STATUS err)
+{
+    CouchBaseConnection *self =
+        (CouchBaseConnection *)(lcb_get_cookie(instance));
+    if (err != LCB_SUCCESS)
+    {
+        LOG_ERROR << "bootstrap error: " << lcb_strerror_short(err);
+        lcb_destroy_async(instance, NULL);
+        self->closeCallback_(self->shared_from_this());
+        return;
+    }
+    LOG_TRACE << "bootstrap successfully";
+    self->okCallback_(self->shared_from_this());
+}
+
+void CouchBaseConnection::getCallback(lcb_INSTANCE *instance,
+                                      int cbtype,
+                                      const lcb_RESPGET *rg)
+{
+    const char *value;
+    size_t nvalue;
+    lcb_STATUS rc = lcb_respget_status(rg);
+
+    if (rc != LCB_SUCCESS)
+    {
+        LOG_ERROR << "Failed to get key: " << lcb_strerror_short(rc);
+        //TODO: exception callback here;
+    }
+
 }
