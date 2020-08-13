@@ -12,15 +12,17 @@
  *
  */
 #pragma once
-#include <couchbase/couchbase.h>
+#include <libcouchbase/couchbase.h>
+#include <libcouchbase/pktfwd.h>
+#include <trantor/utils/NonCopyable.h>
 namespace drogon
 {
 namespace nosql
 {
-class CouchBaseResultImpl
+class CouchBaseResultImpl : public trantor::NonCopyable
 {
   public:
-    ~CouchBaseResultImpl()
+    virtual ~CouchBaseResultImpl()
     {
     }
 
@@ -64,39 +66,39 @@ struct Counter
     using CType = lcb_CMDCOUNTER;
     using RType = lcb_RESPCOUNTER;
 };
-struct Stats
-{
-    using CType = lcb_CMDSTATS;
-    using RType = lcb_RESPSTATS;
-};
-struct Observe
-{
-    using CType = lcb_CMDOBSERVE;
-    using RType = lcb_RESPOBSERVE;
-};
-struct Endure
-{
-    using CType = lcb_CMDENDURE;
-    using RType = lcb_RESPENDURE;
-};
+//struct Stats
+//{
+//    using CType = lcb_CMDSTATS;
+//    using RType = lcb_RESPSTATS;
+//};
+//struct Observe
+//{
+//    using CType = lcb_CMDOBSERVE;
+//    using RType = lcb_RESPOBSERVE;
+//};
+//struct Endure
+//{
+//    using CType = lcb_CMDENDURE;
+//    using RType = lcb_RESPENDURE;
+//};
 }  // namespace operation
 template <typename T = operation::Base>
 class LcbResult : CouchBaseResultImpl
 {
   public:
-    using RType = T::RType;
+    using RType = typename T::RType;
     LcbResult(RType *resp)
     {
         u_.resp_ = *resp;
-        init();
     }
-    virtual void init() override
+    virtual ~LcbResult()
     {
     }
 
-  private:
+  protected:
     union {
-        lcb_RESTBASE base_, RType resp_
+        lcb_RESPBASE base_;
+        RType resp_;
     } u_;
 };
 class GetLcbResult : public LcbResult<operation::Get>
@@ -104,20 +106,26 @@ class GetLcbResult : public LcbResult<operation::Get>
   public:
     GetLcbResult(const RType *resp) : LcbResult<operation::Get>(resp)
     {
-    }
-    virtual void init() override
-    {
         assert(u_.base_.rc == LCB_SUCCESS);
-        if (u.resp.bufh)
+        if (u_.resp_.bufh)
         {
-            lcb_backbuf_ref((lcb_BACKBUF)u.resp.bufh);
+            lcb_backbuf_ref((lcb_BACKBUF)u_.resp_.bufh);
         }
-        else if (u.resp.nvalue)
+        else if (u_.resp_.nvalue)
         {
-            char *tmp = new char[u.resp.nvalue + sizeof(size_t)];
-            u.resp.value = tmp;
-            size_t rc = 1;
-            memcpy(vbuf_refcnt(), &rc, sizeof rc);
+            char *tmp = new char[u_.resp_.nvalue];
+            u_.resp_.value = tmp;
+        }
+    }
+    virtual ~GetLcbResult()
+    {
+        if (u_.resp_.bufh)
+        {
+            lcb_backbuf_unref((lcb_BACKBUF)u_.resp_.bufh);
+        }
+        else if (u_.resp_.value)
+        {
+            delete[] u_.resp_.value;
         }
     }
 };

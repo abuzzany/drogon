@@ -16,6 +16,7 @@
 #define INVALID_SOCKET -1
 #endif
 #include "CouchBaseConnection.h"
+#include "CouchBaseResultImpl.h"
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/Channel.h>
 #include <errno.h>
@@ -312,7 +313,8 @@ void CouchBaseConnection::getCallback(lcb_INSTANCE *instance,
     if (rc != LCB_SUCCESS)
     {
         LOG_ERROR << "Failed to get key: " << lcb_strerror_short(rc);
-        //TODO: exception callback here;
+        // TODO: exception callback here;
     }
-
+    std::shared_ptr<CouchBaseResultImpl> resultImplPtr =
+        std::make_shared<GetLcbResult>(rg);
 }
